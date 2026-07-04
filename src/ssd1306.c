@@ -258,6 +258,49 @@ void ssd1306_draw_string_8x16(int x, int y, const char *s)
     }
 }
 
+/* Row-major bit-packed renderer — Font8x8/12x16/12x24/16x32_Data (see
+ * font.h) store ceil(width/8) bytes per row, MSB-first, top-to-bottom,
+ * unlike the column-major fonts above. One shared implementation
+ * parameterized by width/height/bytes-per-row; ssd1306_draw_string_8x8()/
+ * _12x16()/_12x24()/_16x32() below just pass in their own font's data
+ * pointer and dimensions. */
+static void draw_string_rowmajor(int x, int y, const char *s, const uint8_t *data,
+                                  uint8_t width, uint8_t height, uint8_t bytes_per_row)
+{
+    uint16_t glyph_size = (uint16_t)bytes_per_row * height;
+    for (; *s; s++, x += width) {
+        if (*s < 32 || *s > 126) continue;
+        const uint8_t *glyph = data + (uint16_t)(*s - 32) * glyph_size;
+        for (uint8_t row = 0; row < height; row++) {
+            const uint8_t *row_bytes = glyph + (uint16_t)row * bytes_per_row;
+            for (uint8_t col = 0; col < width; col++) {
+                uint8_t byte = row_bytes[col / 8];
+                if ((byte >> (7 - (col % 8))) & 1) ssd1306_draw_pixel(x + col, y + row, true);
+            }
+        }
+    }
+}
+
+void ssd1306_draw_string_8x8(int x, int y, const char *s)
+{
+    draw_string_rowmajor(x, y, s, Font8x8_Data, 8, 8, 1);
+}
+
+void ssd1306_draw_string_12x16(int x, int y, const char *s)
+{
+    draw_string_rowmajor(x, y, s, Font12x16_Data, 12, 16, 2);
+}
+
+void ssd1306_draw_string_12x24(int x, int y, const char *s)
+{
+    draw_string_rowmajor(x, y, s, Font12x24_Data, 12, 24, 2);
+}
+
+void ssd1306_draw_string_16x32(int x, int y, const char *s)
+{
+    draw_string_rowmajor(x, y, s, Font16x32_Data, 16, 32, 2);
+}
+
 void ssd1306_fill_rect(int x, int y, int w, int h, bool on)
 {
     for (int py = y; py < y + h; py++)
