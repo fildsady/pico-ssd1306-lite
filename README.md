@@ -40,6 +40,35 @@ ssd1306_update();
 
 See [inc/ssd1306.h](inc/ssd1306.h) for the full API.
 
+## Alternative: u8g2
+
+This repo also bundles [u8g2](https://github.com/olikraus/u8g2) (as a git
+submodule, `lib/u8g2`) plus a Pico SDK HAL (`inc/u8g2_pico_hal.h` /
+`src/u8g2_pico_hal.c`) for projects that want u8g2's much larger built-in
+font table and shape-drawing (arcs/circles/polygons) instead of this repo's
+own minimal `ssd1306.c`/`font.h`. It's a separate rendering path — same
+I2C bus/pins, no shared code — pick one or the other, not both on the same
+display. See `examples/u8g2_font_test.c` for a minimal usage example
+(cycles a few of u8g2's fonts on-screen).
+
+```c
+#include "u8g2.h"
+#include "u8g2_pico_hal.h"
+
+u8g2_t u8g2;
+u8g2_Setup_ssd1306_i2c_128x64_noname_f(&u8g2, U8G2_R0,
+    u8g2_pico_hal_byte_cb, u8g2_pico_hal_gpio_and_delay_cb);
+u8g2_InitDisplay(&u8g2);
+u8g2_SetPowerSave(&u8g2, 0);
+u8g2_ClearBuffer(&u8g2);
+u8g2_SetFont(&u8g2, u8g2_font_ncenB08_tr);
+u8g2_DrawStr(&u8g2, 0, 20, "Hello");
+u8g2_SendBuffer(&u8g2);
+```
+
+`u8g2_pico_hal.c` only needs Pico SDK's `hardware_i2c` — no FreeRTOS
+dependency, unlike this repo's own `ssd1306.c`.
+
 ## License
 
 MIT — see [LICENSE](LICENSE). `Font8x16` in `font.h` is separately public domain (see the comment above it in that file for attribution).
