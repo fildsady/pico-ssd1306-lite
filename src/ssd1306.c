@@ -8,6 +8,22 @@
 #include "semphr.h"
 #include <string.h>
 
+/* Which shared DMA IRQ line (DMA_IRQ_0/DMA_IRQ_1) to hook — selected via
+ * OLED_DMA_IRQ_INDEX in the project's oled_driver_config.h (see ssd1306.h).
+ * Pico SDK's irqN-suffixed functions aren't parameterizable by index, so
+ * this picks the right set of them at compile time instead. */
+#if OLED_DMA_IRQ_INDEX == 0
+#define OLED_DMA_IRQ                     DMA_IRQ_0
+#define oled_dma_channel_set_irq_enabled dma_channel_set_irq0_enabled
+#define oled_dma_channel_get_irq_status  dma_channel_get_irq0_status
+#define oled_dma_channel_acknowledge_irq dma_channel_acknowledge_irq0
+#else
+#define OLED_DMA_IRQ                     DMA_IRQ_1
+#define oled_dma_channel_set_irq_enabled dma_channel_set_irq1_enabled
+#define oled_dma_channel_get_irq_status  dma_channel_get_irq1_status
+#define oled_dma_channel_acknowledge_irq dma_channel_acknowledge_irq1
+#endif
+
 /* ── Double buffers ──────────────────────────────────────────────────────── */
 static uint8_t  buf_a[SSD1306_BUF_SIZE];
 static uint8_t  buf_b[SSD1306_BUF_SIZE];
@@ -36,8 +52,8 @@ static void send_cmds(const uint8_t *buf, size_t len)
 
 static void dma_irq_handler(void)
 {
-    if (!dma_channel_get_irq1_status(s_dma_ch)) return;
-    dma_channel_acknowledge_irq1(s_dma_ch);
+    if (!oled_dma_channel_get_irq_status(s_dma_ch)) return;
+    oled_dma_channel_acknowledge_irq(s_dma_ch);
 
     s_busy = false;
 
@@ -50,6 +66,15 @@ static void dma_irq_handler(void)
 
 void ssd1306_init(void)
 {
+    /* Idempotent — safe to call more than once (e.g. u8g2_pico_hal_init()
+     * calls this unconditionally so it works standalone or alongside code
+     * that already called ssd1306_init() itself). Without this guard, a
+     * second call would re-claim a DMA channel and recreate the semaphore
+     * out from under any in-flight transfer. */
+    static bool s_initialized = false;
+    if (s_initialized) return;
+    s_initialized = true;
+
     /* I2C hardware */
     i2c_init(OLED_I2C_PORT, OLED_I2C_FREQ);
     gpio_set_function(OLED_I2C_SDA, GPIO_FUNC_I2C);
@@ -67,11 +92,11 @@ void ssd1306_init(void)
     channel_config_set_write_increment(&dc, false);
     dma_channel_set_config(s_dma_ch, &dc, false);
     dma_channel_set_write_addr(s_dma_ch, &i2c_get_hw(OLED_I2C_PORT)->data_cmd, false);
-    dma_channel_set_irq1_enabled(s_dma_ch, true);
+    oled_dma_channel_set_irq_enabled(s_dma_ch, true);
 
-    irq_add_shared_handler(DMA_IRQ_1, dma_irq_handler, PICO_SHARED_IRQ_HANDLER_DEFAULT_ORDER_PRIORITY);
-    irq_set_priority(DMA_IRQ_1, configMAX_SYSCALL_INTERRUPT_PRIORITY);
-    irq_set_enabled(DMA_IRQ_1, true);
+    irq_add_shared_handler(OLED_DMA_IRQ, dma_irq_handler, PICO_SHARED_IRQ_HANDLER_DEFAULT_ORDER_PRIORITY);
+    irq_set_priority(OLED_DMA_IRQ, configMAX_SYSCALL_INTERRUPT_PRIORITY);
+    irq_set_enabled(OLED_DMA_IRQ, true);
 
     /* Semaphore — pre-armed so first ssd1306_update() doesn't block */
     s_done = xSemaphoreCreateBinary();

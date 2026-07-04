@@ -4,14 +4,33 @@
 #include <stddef.h>
 #include "font.h"
 
-/* ── Hardware pins — change to match wiring ──────────────────────────────── */
-/* On GP2/3 (i2c1) rather than GP4/5 (i2c0) — freed GP4/5 up for UART1, the
- * pin pair a second RS485/Modbus/DMX bus would need. */
-#define OLED_I2C_PORT   i2c1
-#define OLED_I2C_SDA    2
-#define OLED_I2C_SCL    3
-#define OLED_I2C_ADDR   0x3C
-#define OLED_I2C_FREQ   400000
+/* ── Hardware config — supplied by the PROJECT, not this repo ───────────────
+ * Same pattern as FreeRTOSConfig.h: this header never defines the pins/
+ * peripheral itself, it just #includes "oled_driver_config.h" and expects
+ * whoever links this driver in to have that file somewhere on their
+ * include path, defining:
+ *
+ *   OLED_I2C_PORT       - i2c0 or i2c1
+ *   OLED_I2C_SDA        - GPIO number
+ *   OLED_I2C_SCL        - GPIO number
+ *   OLED_I2C_ADDR       - 7-bit I2C address (0x3C for most SSD1306 modules)
+ *   OLED_I2C_FREQ       - I2C clock, Hz (400000 = fast mode)
+ *   OLED_DMA_IRQ_INDEX  - 0 or 1: which shared DMA IRQ line (DMA_IRQ_0/
+ *                         DMA_IRQ_1) this driver's completion handler uses.
+ *                         Only matters if another driver in the same
+ *                         project also hooks a DMA IRQ line and you need to
+ *                         put them on different ones.
+ *
+ * See inc/oled_driver_config.example.h in this repo for a template — copy
+ * it into your own project's include path as oled_driver_config.h and fill
+ * in your board's actual pins. Without that file present, this driver
+ * won't compile — that's intentional, there's no sane default pin wiring
+ * to fall back to. */
+#include "oled_driver_config.h"
+
+#ifndef OLED_DMA_IRQ_INDEX
+#define OLED_DMA_IRQ_INDEX 1
+#endif
 
 /* ── Display geometry ────────────────────────────────────────────────────── */
 #define SSD1306_WIDTH    128

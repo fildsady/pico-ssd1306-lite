@@ -60,6 +60,15 @@ uint8_t u8g2_pico_hal_byte_cb(u8x8_t *u8x8, uint8_t msg, uint8_t arg_int, void *
     return 1;
 }
 
+void u8g2_pico_hal_init(u8g2_t *u8g2)
+{
+    ssd1306_init(); /* idempotent — brings up the shared I2C/DMA driver if not already up */
+    u8g2_Setup_ssd1306_i2c_128x64_noname_f(u8g2, U8G2_R0,
+        u8g2_pico_hal_byte_cb, u8g2_pico_hal_gpio_and_delay_cb);
+    u8g2_InitDisplay(u8g2);
+    u8g2_SetPowerSave(u8g2, 0);
+}
+
 uint8_t u8g2_pico_hal_gpio_and_delay_cb(u8x8_t *u8x8, uint8_t msg, uint8_t arg_int, void *arg_ptr)
 {
     (void)u8x8;

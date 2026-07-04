@@ -13,7 +13,6 @@
 #include "task.h"
 #include "u8g2.h"
 #include "u8g2_pico_hal.h"
-#include "ssd1306.h" /* ssd1306_init() brings up the shared I2C/DMA driver u8g2's HAL uses */
 
 typedef struct {
     const char *name;
@@ -41,13 +40,8 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName) {
 static void task_u8g2_font_test(void *pv) {
     (void)pv;
 
-    ssd1306_init(); /* brings up the shared I2C/DMA driver u8g2's HAL sends through */
-
     u8g2_t u8g2;
-    u8g2_Setup_ssd1306_i2c_128x64_noname_f(&u8g2, U8G2_R0,
-        u8g2_pico_hal_byte_cb, u8g2_pico_hal_gpio_and_delay_cb);
-    u8g2_InitDisplay(&u8g2);
-    u8g2_SetPowerSave(&u8g2, 0);
+    u8g2_pico_hal_init(&u8g2); /* brings up the shared I2C/DMA driver + u8g2 setup */
 
     int i = 0;
     for (;;) {
