@@ -40,4 +40,19 @@ void oled_draw_row(int y, const char *line, bool inverted)
     if (inverted) u8g2_SetDrawColor(&s_u8g2, 1);
 }
 
+void oled_draw_row_rjust(int y, const char *left, const char *right, bool inverted)
+{
+    if (inverted) {
+        u8g2_SetDrawColor(&s_u8g2, 1);
+        u8g2_DrawBox(&s_u8g2, 0, y, 128, 16);
+        u8g2_SetDrawColor(&s_u8g2, 0);
+    }
+    u8g2_DrawStr(&s_u8g2, 0, y + 12, left);
+    if (right && right[0]) {
+        int w = u8g2_GetStrWidth(&s_u8g2, right);
+        u8g2_DrawStr(&s_u8g2, 128 - w - 4, y + 12, right);
+    }
+    if (inverted) u8g2_SetDrawColor(&s_u8g2, 1);
+}
+
 u8g2_t *oled_u8g2(void) { return &s_u8g2; }

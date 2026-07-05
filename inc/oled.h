@@ -36,6 +36,12 @@ void oled_draw_str(int x, int y, const char *s);
  * selected" pattern. */
 void oled_draw_row(int y, const char *line, bool inverted);
 
+/* Same row/background as oled_draw_row(), but with a second string
+ * right-justified against the row's right edge (x=128) instead of a single
+ * left-justified string — e.g. a title on the left and a page number on the
+ * right. `right` may be NULL/"" to behave exactly like oled_draw_row(). */
+void oled_draw_row_rjust(int y, const char *left, const char *right, bool inverted);
+
 /* Escape hatch — direct access to the underlying u8g2_t for anything this
  * wrapper doesn't cover (custom fonts, shapes, etc). Using this ties the
  * calling code back to u8g2's own API/naming, same tradeoff as reaching
