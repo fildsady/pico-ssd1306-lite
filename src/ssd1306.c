@@ -64,6 +64,76 @@ static void dma_irq_handler(void)
 
 /* ── Public API ──────────────────────────────────────────────────────────── */
 
+/* Display init sequence — file-scope (not local to ssd1306_init_early())
+ * since nothing else needs it, but kept as one named array either way). */
+static const uint8_t s_init_seq[] = {
+    0x00,
+    0xAE,         /* display off */
+    0xD5, 0x80,   /* clock divide */
+    0xA8, 0x3F,   /* multiplex 64 */
+    0xD3, 0x00,   /* offset 0 */
+    0x40,         /* start line 0 */
+    0x8D, 0x14,   /* charge pump on */
+    0x20, 0x00,   /* horizontal addressing */
+    0xA1,         /* seg remap */
+    0xC8,         /* COM reversed */
+    0xDA, 0x12,   /* COM pins */
+    0x81, 0xCF,   /* contrast */
+    0xD9, 0xF1,   /* pre-charge */
+    0xDB, 0x40,   /* VCOMH */
+    0xA4,         /* output from RAM */
+    0xA6,         /* normal display */
+    0xAF,         /* display on */
+};
+
+void ssd1306_init_early(void)
+{
+    /* Idempotent, same reasoning as ssd1306_init()'s own guard below —
+     * separate flag since this can run standalone (before the scheduler
+     * starts) and/or be followed by the full ssd1306_init() later. */
+    static bool s_early_done = false;
+    if (s_early_done) return;
+    s_early_done = true;
+
+    i2c_init(OLED_I2C_PORT, OLED_I2C_FREQ);
+    gpio_set_function(OLED_I2C_SDA, GPIO_FUNC_I2C);
+    gpio_set_function(OLED_I2C_SCL, GPIO_FUNC_I2C);
+    gpio_pull_up(OLED_I2C_SDA);
+    gpio_pull_up(OLED_I2C_SCL);
+    sleep_ms(50);
+
+    send_cmds(s_init_seq, sizeof(s_init_seq));
+
+    /* Blank both buffers up front, then push once — draw calls between here
+     * and the real ssd1306_init()/ssd1306_update() (e.g. a boot message
+     * drawn from main(), see ssd1306_flush_blocking()) go into back_buf,
+     * same as always. */
+    memset(buf_a, 0, SSD1306_BUF_SIZE);
+    memset(buf_b, 0, SSD1306_BUF_SIZE);
+    ssd1306_flush_blocking();
+}
+
+void ssd1306_flush_blocking(void)
+{
+    /* Pushes back_buf directly over a blocking I2C write — no DMA, no
+     * semaphore, no ISR, unlike ssd1306_i2c_send_dma()/ssd1306_update()
+     * (which need ssd1306_init()'s DMA channel + FreeRTOS scheduler
+     * running). For drawing a boot message before the scheduler starts —
+     * draw into back_buf with the usual ssd1306_draw_*() calls, then call
+     * this instead of ssd1306_update() to actually show it. Slower (blocks
+     * the caller for the whole ~23ms transfer) but that's irrelevant pre-
+     * scheduler since nothing else is running yet anyway. Does NOT swap
+     * front_buf/back_buf like ssd1306_update() does — there's no "other"
+     * task drawing the next frame concurrently at this point, so there's
+     * nothing to swap for. */
+    static const uint8_t addr_win[] = { 0x00, 0x21, 0x00, 0x7F, 0x22, 0x00, 0x07 };
+    send_cmds(addr_win, sizeof(addr_win));
+    static uint8_t frame[1 + SSD1306_BUF_SIZE];
+    frame[0] = 0x40;
+    memcpy(frame + 1, back_buf, SSD1306_BUF_SIZE);
+    i2c_write_blocking(OLED_I2C_PORT, OLED_I2C_ADDR, frame, sizeof(frame), false);
+}
+
 void ssd1306_init(void)
 {
     /* Idempotent — safe to call more than once (e.g. u8g2_pico_hal_init()
@@ -75,13 +145,12 @@ void ssd1306_init(void)
     if (s_initialized) return;
     s_initialized = true;
 
-    /* I2C hardware */
-    i2c_init(OLED_I2C_PORT, OLED_I2C_FREQ);
-    gpio_set_function(OLED_I2C_SDA, GPIO_FUNC_I2C);
-    gpio_set_function(OLED_I2C_SCL, GPIO_FUNC_I2C);
-    gpio_pull_up(OLED_I2C_SDA);
-    gpio_pull_up(OLED_I2C_SCL);
-    sleep_ms(100);
+    /* Covers I2C/GPIO bring-up + the init command sequence — already done
+     * if the caller (or something earlier, e.g. main()) called
+     * ssd1306_init_early() first; harmless/no-op if so, otherwise does it
+     * now. Either way, everything from here down (DMA/semaphore/ISR) needs
+     * the FreeRTOS scheduler already running. */
+    ssd1306_init_early();
 
     /* DMA channel — configured once, reused every frame */
     s_dma_ch = dma_claim_unused_channel(true);
@@ -102,30 +171,14 @@ void ssd1306_init(void)
     s_done = xSemaphoreCreateBinary();
     xSemaphoreGive(s_done);
 
-    /* Display init sequence */
-    static const uint8_t init_seq[] = {
-        0x00,
-        0xAE,         /* display off */
-        0xD5, 0x80,   /* clock divide */
-        0xA8, 0x3F,   /* multiplex 64 */
-        0xD3, 0x00,   /* offset 0 */
-        0x40,         /* start line 0 */
-        0x8D, 0x14,   /* charge pump on */
-        0x20, 0x00,   /* horizontal addressing */
-        0xA1,         /* seg remap */
-        0xC8,         /* COM reversed */
-        0xDA, 0x12,   /* COM pins */
-        0x81, 0xCF,   /* contrast */
-        0xD9, 0xF1,   /* pre-charge */
-        0xDB, 0x40,   /* VCOMH */
-        0xA4,         /* output from RAM */
-        0xA6,         /* normal display */
-        0xAF,         /* display on */
-    };
-    send_cmds(init_seq, sizeof(init_seq));
-
-    memset(buf_a, 0, SSD1306_BUF_SIZE);
-    memset(buf_b, 0, SSD1306_BUF_SIZE);
+    /* Deliberately NOT memset-ing buf_a/buf_b to 0 here — used to, but that
+     * silently wiped out a boot message drawn into back_buf before this
+     * ran (main()'s ssd1306_draw_string_8x16()+ssd1306_flush_blocking()),
+     * replacing it with a blank frame via this ssd1306_update() call before
+     * the caller (task_lcd) ever got a chance to actually show it. Buffers
+     * already start zeroed at compile time (static arrays) and
+     * ssd1306_init_early() blanks them again if it runs standalone without
+     * anything drawing over it — nothing here needs a fresh blank. */
     ssd1306_update();
 }
 

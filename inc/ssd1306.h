@@ -39,6 +39,24 @@
 #define SSD1306_BUF_SIZE (SSD1306_WIDTH * SSD1306_PAGES)
 
 /* ── API ─────────────────────────────────────────────────────────────────── */
+/* Safe to call before the FreeRTOS scheduler has started (unlike
+ * ssd1306_init() below) — pure blocking i2c_write_blocking() calls only, no
+ * DMA channel claim, no semaphore, no ISR. Brings the panel up and blanks
+ * its GDDRAM so it shows a clear screen instead of power-on garbage the
+ * instant it's powered, without waiting for any FreeRTOS task to run.
+ * ssd1306_init() (below) calls this itself and is safe to call afterward
+ * regardless — it only sets up the DMA/semaphore path on top, it doesn't
+ * redo the parts this already did. */
+void ssd1306_init_early(void);
+
+/* Pushes back_buf to the panel over a blocking I2C write — no DMA/
+ * semaphore/ISR, safe before the scheduler starts. Draw a boot message with
+ * the usual ssd1306_draw_*() calls into back_buf, then call this (instead
+ * of ssd1306_update(), which needs ssd1306_init()'s DMA/scheduler) to
+ * actually show it. Unlike ssd1306_update(), does not swap front_buf/
+ * back_buf — nothing else is drawing concurrently at this point. */
+void ssd1306_flush_blocking(void);
+
 void ssd1306_init(void);
 void ssd1306_clear(void);                             // clear back buffer
 void ssd1306_update(void);                            // swap + start DMA

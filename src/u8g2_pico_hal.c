@@ -77,7 +77,18 @@ uint8_t u8g2_pico_hal_gpio_and_delay_cb(u8x8_t *u8x8, uint8_t msg, uint8_t arg_i
     case U8X8_MSG_GPIO_AND_DELAY_INIT:
         break; /* no reset/CS/DC pins wired for this I2C-only OLED module */
     case U8X8_MSG_DELAY_MILLI:
-        vTaskDelay(pdMS_TO_TICKS(arg_int)); /* yields to other tasks, unlike sleep_ms() */
+        /* u8x8_d_helper_display_init() (u8x8_display.c) sandwiches its
+         * reset-pin toggle between 3 of these calls — reset_pulse_width_ms
+         * and post_reset_wait_ms are both 100ms for this display variant
+         * (u8x8_d_ssd1306_128x64_noname.c), so ~300ms total. Since this
+         * module has no reset pin wired at all (the GPIO toggle above is
+         * already a no-op), that whole 300ms was dead time waiting for a
+         * pin transition that never physically happens — measured as most
+         * of task_lcd's ~0.5s gap between the pre-scheduler "Booting..."
+         * message and its own first real frame. Skipping it entirely (not
+         * just shortening) is safe specifically because there's no reset
+         * pin to settle; a display module that DID have one wired would
+         * need this real. */
         break;
     case U8X8_MSG_DELAY_10MICRO:
         sleep_us(arg_int * 10); /* sub-tick delays too short to yield usefully — busy-wait is fine here */
